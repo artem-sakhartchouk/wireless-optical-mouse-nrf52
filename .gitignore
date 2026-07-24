@@ -1,0 +1,44 @@
+# Nordic example projects not used by this receiver
+pca10056/
+pca10100/
+pca10100e/
+
+# IAR workspace
+usbd.eww
+
+
+# Generated firmware output
+hex/
+
+# Build directories
+Build/
+build/
+Output/
+Debug/
+Release/
+
+# Compiled files
+*.o
+*.d
+*.elf
+*.hex
+*.map
+
+# Segger user-specific files
+*.emProject.user
+
+# Windows files
+Thumbs.db
+Desktop.ini
+
+
+# Unused toolchain projects inside the modified board folder
+pca10056 - modified/blank/arm5_no_packs/
+pca10056 - modified/blank/armgcc/
+pca10056 - modified/blank/iar/
+
+# Segger build output and session-specific files
+pca10056 - modified/blank/ses/Output/
+*.emSession
+*.jlink
+*.jlinklog
