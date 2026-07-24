@@ -2,6 +2,7 @@
 #define STATUS_LEDS_H
 
 #include <stdint.h>
+#include <stdbool.h>
 
 //board led pin number definitions
 typedef enum{
@@ -29,6 +30,6 @@ void led_set_mode(led_t led, led_mode_t mode, uint32_t interval_ms); //configure
 void led_on(led_t led);
 void led_off(led_t led);
 
-void led_write(led_t led, bool is_on);
+static void led_write(led_t led, bool is_on);
 
 #endif

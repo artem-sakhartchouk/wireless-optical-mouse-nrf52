@@ -114,24 +114,12 @@
     <file file_name="../../../../../../components/proprietary_rf/esb/nrf_esb.h">
       <configuration Name="Release" build_exclude_from_build="No" />
     </file>
-    <file file_name="usb_mouse.h">
-      <configuration Name="Release" build_exclude_from_build="Yes" />
-    </file>
-    <file file_name="usb_mouse.c">
-      <configuration Name="Release" build_exclude_from_build="Yes" />
-    </file>
-    <file file_name="usb.h">
-      <configuration Name="Release" build_exclude_from_build="Yes" />
-    </file>
     <file file_name="../../../usb_mouse.c" />
     <file file_name="../../../usb_mouse.h" />
-    <file file_name="LEDs.h">
-      <configuration Name="Release" build_exclude_from_build="Yes" />
-    </file>
     <file file_name="../../../esb_mouse.c" />
     <file file_name="../../../esb_mouse.h" />
-    <file file_name="status_leds.h" />
-    <file file_name="status_leds.c" />
+    <file file_name="../../../status_leds.c" />
+    <file file_name="../../../platform.c" />
   </project>
   <configuration
     Name="Release"

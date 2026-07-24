@@ -57,28 +57,7 @@
 #include "status_leds.h"
 #include "usb_mouse.h"
 #include "esb_mouse.h"
-
-
-static void init_power_clock(void)
-{
-    ret_code_t ret;
-    /* Initializing power and clock */
-    ret = nrf_drv_clock_init();
-    APP_ERROR_CHECK(ret);
-    ret = nrf_drv_power_init(NULL);
-    APP_ERROR_CHECK(ret);
-    nrf_drv_clock_hfclk_request(NULL);
-    nrf_drv_clock_lfclk_request(NULL);
-    while (!(nrf_drv_clock_hfclk_is_running() &&
-            nrf_drv_clock_lfclk_is_running()))
-    {
-        /* wait until both clocks are online */
-    }
-
-
-}
-
-
+#include "platform.h"
 
 
 
@@ -86,10 +65,10 @@ int main(void)
 {
     ret_code_t ret;
 
-    init_power_clock();
+    platform_init();
 
     
-    nrf_power_resetreas_clear(nrf_power_resetreas_get());
+    //nrf_power_resetreas_clear(nrf_power_resetreas_get());
 
     //initialize led module  
     leds_init();

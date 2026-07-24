@@ -21,12 +21,12 @@ typedef struct
 
 static const uint32_t m_led_pins[LED_COUNT] = 
 {
-    [LED_YELLOW] = NRF_GPIO_PIN_MAP(0,6);
-    [LED_RED] = NRF_GPIO_PIN_MAP(0,8);
-    [LED_GREEN] = NRF_GPIO_PIN_MAP(1,9);
-    [LED_BLUE] = NRF_GPIO_PIN_MAP(0,12);
+    [LED_YELLOW] = NRF_GPIO_PIN_MAP(0,6),
+    [LED_RED] = NRF_GPIO_PIN_MAP(0,8),
+    [LED_GREEN] = NRF_GPIO_PIN_MAP(1,9),
+    [LED_BLUE] = NRF_GPIO_PIN_MAP(0,12)
 
-}
+};
 
 
 static led_state_t m_led_states[LED_COUNT]; //array of led states
@@ -118,11 +118,11 @@ static void led_write(led_t led, bool is_on)
 
     if(is_on)
     {
-        nrf_gpio_pin_clear(m_led_pin[led]);
+        nrf_gpio_pin_clear(m_led_pins[led]);
     }
     else 
     {
-        nrf_gpio_pin_set(m_led_pin[led]);
+        nrf_gpio_pin_set(m_led_pins[led]);
     }
 
 }
