@@ -354,7 +354,7 @@ static volatile bool m_usbd_rwu_enabled = false; //host can enable remote wakeup
 static volatile bool m_send_mouse_position = false; //set when usb is busy sending data to host
 static volatile bool m_usbd_suspend_state_req = false; //set if host wants to suspend the device
 
-
+static uint8_t m_previous_buttons; //global for storing incoming button states for click detect for usb rwu
 
 /******************************************************************************
  * USB Helper Functions
@@ -934,40 +934,7 @@ static void usbd_event_handler(nrf_drv_usbd_evt_t const * const p_event)
     case NRF_DRV_USBD_EVT_SOF:
         {
 
-            //m_tick++;
-
-            //static uint32_t led_tick = 0;
-            //led_tick++;
-            
-
-            usb_on_sof();
-
-
-            #if 0
-             // LED1: slow blink (1 Hz)
-            if (led_tick % 1000 == 0)
-            {
-               nrf_gpio_pin_toggle(6);
-            }
-            
-
-            if (m_usbd_configured)
-            {
-              if (led_tick % 200 == 0)
-              {
-                nrf_gpio_pin_toggle(8);  // red pulse
-              }
-            }
-            else
-            {
-             if (led_tick % 500 == 0)
-             {
-              nrf_gpio_pin_toggle(12); // blue slow blink when not configured
-             }
-            }
-
-            #endif
-         
+            usb_on_sof();  
             break;
         }
     case NRF_DRV_USBD_EVT_EPTRANSFER:
@@ -1120,28 +1087,17 @@ void usb_mouse_init(void)
 }
 
 
-#if 0
-void usb_mouse_process(void)
-{
 
-}
-
-
-bool usb_mouse_ready(void)
-{
-    return false;
-}
-
-#endif
 
 //function called by the esb module when rx packet with motion payload arrives updates global mouse state struct 
 static bool usb_mouse_send(const uint8_t *data, uint8_t length)
 {
-    if(length > sizeof(m_tx.buffer))
+    if(length > sizeof(m_tx.buffer)) //might only be possible due to programming error. consider changing
     {
         return false;
     }
 
+    //store data in global usbd buffer for IN ep transmission
     memcpy(m_tx.buffer, data, length);
     m_tx.length = length;
     m_tx.pending = true;
@@ -1157,6 +1113,14 @@ bool usb_mouse_send_report(
     int8_t wheel)
 {
 
+
+    uint8_t new_click = buttons & (uint8_t)~m_previous_buttons; //check for new presses
+
+    m_previous_buttons = buttons; //capture current button state 
+
+
+
+    //build hid report struct for usb transmission
     hid_mouse_report_t report =
     {
         .buttons = buttons,
@@ -1165,8 +1129,23 @@ bool usb_mouse_send_report(
         .wheel = wheel
     };
         
-    return usb_mouse_send(
+    //store new report to global usbd buffer
+    bool accepted =  usb_mouse_send(
         (const uint8_t *)&report,
         sizeof(report));
+
+    //if host suspended the device, request remote wakeup on button click+
+    if(m_usbd_suspended)
+    {
+        if(m_usbd_rwu_enabled && new_click != 0)
+        {
+            (void)nrf_drv_usbd_wakeup_req();
+        }
+    
+        /* next report hid report is queued but wont 
+           transmit until resume and sof event */
+    }
+
+    return accepted; //return true if report was successfully stored inside of the global buffer
 
 }
