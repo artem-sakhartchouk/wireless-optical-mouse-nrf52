@@ -1,0 +1,37 @@
+# Unused board targets
+pca10040/
+pca10040e/
+pca10056/
+pca10056e/
+pca10100e/
+
+# IAR workspace
+esb_ptx.eww
+
+# Generated firmware output
+hex/
+
+# Generated build directories
+Output/
+Build/
+build/
+Debug/
+Release/
+
+# Segger user/session files
+*.emSession
+*.jlink
+*.jlinklog
+*.emProject.user
+
+# Compiled outputs
+*.o
+*.d
+*.elf
+*.hex
+*.bin
+*.map
+
+# Windows files
+Thumbs.db
+Desktop.ini
