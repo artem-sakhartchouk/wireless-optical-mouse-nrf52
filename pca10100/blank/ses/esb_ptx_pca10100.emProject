@@ -120,5 +120,7 @@
     </file>
     <file file_name="../../../../../../modules/nrfx/drivers/src/nrfx_rtc.c" />
     <file file_name="../../../../../../modules/nrfx/drivers/include/nrfx_rtc.h" />
+    <file file_name="esb_mouse_tx.h" />
+    <file file_name="esb_mouse_tx.c" />
   </project>
 </solution>

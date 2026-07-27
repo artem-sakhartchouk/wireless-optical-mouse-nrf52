@@ -37,6 +37,16 @@
  * OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  */
+
+
+/**
+ * rtc compare interrupt determines transmission rate. callback sets flag. 
+ * main loop checks it. sends report if pending and clears it 
+ *
+ */
+
+
+
 #include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
@@ -63,16 +73,11 @@
 
 #include "SEGGER_RTT.h"
 
-//global esb send flag for changed state
-static volatile bool g_mouse_dirty = false;
 
-
-//global button state variables that ensure proper read and write
-static volatile bool button1_pressed = false;
-static volatile bool button2_pressed = false;
+static uint32_t next_cc; //global for incrementing cc by intervals
 
 static volatile bool report_pending;   // something new to send
-volatile bool tx_busy;          // ESB is currently sending
+volatile bool tx_busy;          // ESB is currently sending, wait for esb event handler
 
 static nrf_esb_payload_t        tx_payload = NRF_ESB_CREATE_PAYLOAD(0, 0x01, 0x00, 0x00, 0x00, 0x11, 0x00, 0x00, 0x00);
 
@@ -100,8 +105,7 @@ typedef enum{
    MOUSE_IDLE
 }mouse_power_state_t;
 
-volatile mouse_power_state_t power_state = MOUSE_ACTIVE; //default mouse power state
-volatile uint32_t inactivity_ticks = 0; //for counting inside rtc1 callback, reset in gpiote handler
+volatile mouse_power_state_t power_state = MOUSE_ACTIVE; //determines ESB transmit frequency
 
 static volatile mouse_packet_t current_state; //an instance for asynchronous updating
 
@@ -113,81 +117,71 @@ static uint32_t next_cc; // for updating the rtc after every interrupt
 static nrfx_rtc_t rtc1 = NRFX_RTC_INSTANCE(1); //creates a RTC1 instance
 
 #define RTC_TICKS_PER_SEC      32768UL
-#define IDLE_TIMEOUT_TICKS     (10 * RTC_TICKS_PER_SEC)
+#define IDLE_TIMEOUT_TICKS     (10 * RTC_TICKS_PER_SEC) //set power state to idle after 10 seconds of inactivity
 
 
 #define RTC_INTERVAL_ACTIVE   33      // ~1 ms
 #define RTC_INTERVAL_IDLE     3277    // ~100 ms
 
-volatile uint32_t current_interval; //for holding the compare interval based on power state
-volatile uint32_t last_activity_tick; //for checking for idle, updated in button handler
+//volatile uint32_t current_interval; //for holding the compare interval based on power state
+volatile uint32_t last_activity_tick; //timer count at button press/motion, updated in button handler
+
+
 
 //RTC1 interrupt callback
 static void rtc_handler(nrfx_rtc_int_type_t int_type)
 {
 
 
-    //inactivity_ticks++;
-
-    /*
-    if(inactivity_ticks >= 10000) //after ~10 seconds of inactivity set to idle
+    //this is the only type of interrupt that should trigger based off config    
+    if (int_type != NRFX_RTC_INT_COMPARE0) 
     {
-        power_state = MOUSE_IDLE;
-    
+        return;
     }
 
-    */
+    
+    report_pending = true; //compare event fired, must send esb packet
 
-    uint32_t now = nrfx_rtc_counter_get(&rtc1);
+    uint32_t now = nrfx_rtc_counter_get(&rtc1); //get current count for idle check
 
     if((now - last_activity_tick) >= IDLE_TIMEOUT_TICKS)
-    {
+    {   
+        power_state = MOUSE_IDLE;     
+    }
+
+    /* check power state in case button press/motion 
+     * changed idle/active transmission scheduling */
+    uint32_t interval = 
+        (power_state == MOUSE_ACTIVE)
+            ? RTC_INTERVAL_ACTIVE
+            : RTC_INTERVAL_IDLE;
+
+    next_cc += interval; //already on counter schedule, no need to read count
     
-        power_state = MOUSE_IDLE;
-        current_interval = RTC_INTERVAL_IDLE;
-    }
-
-
-    if (int_type == NRFX_RTC_INT_COMPARE0)
-    {
-        report_pending = true; //compare event fired, must send esb packet
-        
-        uint32_t now = nrfx_rtc_counter_get(&rtc1);
-
-        if(power_state == MOUSE_ACTIVE)
-        {
-        
-            //uint32_t now = nrfx_rtc_counter_get(&rtc1);
-            nrfx_rtc_cc_set(&rtc1, 0, now + RTC_INTERVAL_ACTIVE, true); // ~1ms
-        
-        }
-        else
-        {
-        
-            nrfx_rtc_cc_set(&rtc1, 0, now + RTC_INTERVAL_IDLE, true);
-        
-        }
-       
-    }
+    nrfx_rtc_cc_set(&rtc1, 0, next_cc, true); 
+    
 }
 
 
 
 
-//set up RTC1 
+//set up RTC1 and start counting
 void rtc1_init(void)
 {
-    nrfx_rtc_config_t config = NRFX_RTC_DEFAULT_CONFIG;
+    nrfx_rtc_config_t config = NRFX_RTC_DEFAULT_CONFIG; 
+    config.prescaler = 0; // prescaler 0 = full 32.768 kHz resolution
 
-    // prescaler 0 = full 32.768 kHz resolution
-    config.prescaler = 0;
-
+    //explicitly clear the count after initialize
     nrfx_rtc_init(&rtc1, &config, rtc_handler);
+    nrfx_rtc_counter_clear(&rtc1);
 
-    // enable compare interrupt
-    nrfx_rtc_cc_set(&rtc1, 0, RTC_INTERVAL_ACTIVE, true); // first trigger ~1ms
+    next_cc = RTC_INTERVAL_ACTIVE;
+   
 
-    nrfx_rtc_enable(&rtc1);
+    //set count threshold and enable compare interrupt
+    nrfx_rtc_cc_set(&rtc1, 0, next_cc, true); // first trigger ~1ms
+
+    nrfx_rtc_enable(&rtc1); //start the counter
 }
 
 
@@ -214,6 +208,8 @@ void nrf_esb_event_handler(nrf_esb_evt_t const * p_event)
             
             tx_busy = false; //esb finished transmitting here
             break;
+
+
         case NRF_ESB_EVENT_TX_FAILED:
             NRF_LOG_DEBUG("TX FAILED EVENT");
             (void) nrf_esb_flush_tx();
@@ -236,31 +232,35 @@ void nrf_esb_event_handler(nrf_esb_evt_t const * p_event)
 
 
 //creates esb payload and sends//
-static void try_send_report(void)
+static bool try_send_report(void)
 {
     
     static uint8_t tx_counter = 0;
 
-    mouse_packet_t snapshot = current_state; //copy global mouse state into temp location, because it could change from interrupts
+    mouse_packet_t snapshot = current_state; //copy global mouse state into temp location, because it could change from btn interrupts
 
-    snapshot.packet_sequence = tx_counter++; //put sequence number in payload incremented w/r to transmissions
+    snapshot.packet_sequence = tx_counter++; //put sequence number in payload incremented w/respect to transmissions
 
     //copy current mouse state to esb tx payload
     memcpy(tx_payload.data, &snapshot, sizeof(snapshot));
     tx_payload.length = sizeof(snapshot);
     tx_payload.noack = false; 
 
+
+    ret_code_t ret = nrf_esb_write_payload(&tx_payload);
+
     //send payload to radio buffer and initiate tx
-    if (nrf_esb_write_payload(&tx_payload) == NRF_SUCCESS) //if writing to payload fails for some reason
+    if (ret != NRF_SUCCESS) 
     {
-      tx_busy = true; //radio busy. no tx attempts allowed until cleared
+
+        NRF_LOG_WARNING("Sending packet failed: %lu", ret);
+        return false;
 
     }
-    else
-    {
-      NRF_LOG_WARNING("Sending packet failed");
-    }
-       
+  
+
+    tx_counter++;
+    tx_busy = true;
     report_pending = false; //report is being sent to RX dongle. clear for next RTC1 compare interrupt
 
 }
@@ -280,38 +280,45 @@ void clocks_start( void )
 // Main loop uses button state to generate mouse movement packets.
 static void button_handler(nrfx_gpiote_pin_t pin, nrf_gpiote_polarity_t action)
 {
-
-    //inactivity_ticks = 0; //reset inactivity counter on button change
-    power_state = MOUSE_ACTIVE; //revert to active mouse state on button change
     
-    bsp_board_led_off(BSP_BOARD_LED_0);
 
-    last_activity_tick = nrfx_rtc_counter_get(&rtc1); //samples count count on button activity 
+    bool was_idle = (power_state == MOUSE_IDLE); //save idle state before waking up the mouse
+
+    power_state = MOUSE_ACTIVE; //button press means active by definition
+
     
-    if(current_interval != RTC_INTERVAL_ACTIVE)
+    
+    bsp_board_led_off(BSP_BOARD_LED_0); //debug code
+
+
+
+    last_activity_tick = nrfx_rtc_counter_get(&rtc1); //samples count on button activity for rtc callback idle testing
+    
+    
+
+    if(was_idle)
     {
-    
-        current_interval = RTC_INTERVAL_ACTIVE;
-
-        next_cc = nrfx_rtc_counter_get(&rtc1) + current_interval;
-
-        nrfx_rtc_cc_set(&rtc1,0,next_cc,true);
-    
-    
+        nrfx_rtc_cc_set(
+            &rtc1,
+            0,
+            last_activity_tick+RTC_INTERVAL_ACTIVE,
+            true);
+            
     }
 
-    //g_mouse_dirty = true; //mouse state changed due to button press/release
 
+    bool left = (nrf_gpio_pin_read(BUTTON_1) == 0);
+    bool right = (nrf_gpio_pin_read(BUTTON_2) == 0);
   
-    if(nrf_gpio_pin_read(BUTTON_1) == 0)
+    if(left && !right)
     {
-      current_state.x = -20;
-      bsp_board_led_invert(BSP_BOARD_LED_2);
+        current_state.x = -20;
+        bsp_board_led_invert(BSP_BOARD_LED_2);
     }
-    else if(nrf_gpio_pin_read(BUTTON_2) == 0)
+    else if(right && !left)
     {
-      current_state.x = 20;    
-       bsp_board_led_invert(BSP_BOARD_LED_3);
+        current_state.x = 20;    
+        bsp_board_led_invert(BSP_BOARD_LED_3);
     }
     else // if none or both pressed
     {
@@ -402,6 +409,9 @@ static void lfclk_handler(nrfx_clock_evt_type_t event)
   }
 }
 
+
+
+
 int main(void)
 {
 
@@ -409,15 +419,10 @@ int main(void)
   
     ret_code_t err_code;
 
-    //clock_init();
     
-    volatile int a = 1;
-
-
     gpio_init();
 
-    volatile int b = 2;
-
+  
     buttons_init(); //for gpiote
 
 
@@ -439,30 +444,10 @@ int main(void)
 
     err_code = esb_init();
 
-
     APP_ERROR_CHECK(err_code);
 
-    NRF_LOG_DEBUG("Enhanced ShockBurst Transmitter Example started.");
-
- 
-    /*
-    ret_code_t err = nrfx_gpiote_init();
-    //APP_ERROR_CHECK(err);
-
-    if(err == NRFX_ERROR_INVALID_STATE)
-    {
-       bsp_board_led_on(BSP_BOARD_LED_2);
-    }
-
-    */
-
-
-    SEGGER_RTT_printf(0, "Entering main loop\r\n");
-
-
-    static uint16_t counter = 0;
-    
-
+   
+     
     while (true)
     {
 
