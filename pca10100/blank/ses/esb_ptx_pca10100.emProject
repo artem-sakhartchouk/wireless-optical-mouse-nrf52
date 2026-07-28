@@ -100,32 +100,15 @@
     <file file_name="../../../../../../modules/nrfx/templates/nRF52840/nrfx_config.h">
       <configuration Name="Debug" build_exclude_from_build="No" />
     </file>
-    <file file_name="../../../../../../components/libraries/timer/drv_rtc.c">
-      <configuration Name="Debug" build_exclude_from_build="Yes" />
-    </file>
-    <file file_name="../../../../../../components/libraries/timer/drv_rtc.h">
-      <configuration Name="Debug" build_exclude_from_build="Yes" />
-    </file>
     <file file_name="../../../../../../modules/nrfx/drivers/src/nrfx_clock.c">
       <configuration Name="Debug" build_exclude_from_build="No" />
-    </file>
-    <file file_name="../../../../../../integration/nrfx/legacy/nrf_drv_clock.c">
-      <configuration Name="Debug" build_exclude_from_build="Yes" />
-    </file>
-    <file file_name="../../../../../../integration/nrfx/legacy/nrf_drv_clock.h">
-      <configuration Name="Debug" build_exclude_from_build="Yes" />
     </file>
     <file file_name="../../../../../../modules/nrfx/drivers/include/nrfx_clock.h">
       <configuration Name="Debug" build_exclude_from_build="No" />
     </file>
     <file file_name="../../../../../../modules/nrfx/drivers/src/nrfx_rtc.c" />
     <file file_name="../../../../../../modules/nrfx/drivers/include/nrfx_rtc.h" />
-    <file file_name="esb_mouse_tx.h">
-      <configuration Name="Debug" build_exclude_from_build="Yes" />
-    </file>
-    <file file_name="esb_mouse_tx.c">
-      <configuration Name="Debug" build_exclude_from_build="Yes" />
-    </file>
     <file file_name="../../../esb_mouse_tx.c" />
+    <file file_name="../../../mouse_scheduler.c" />
   </project>
 </solution>
