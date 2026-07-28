@@ -1,0 +1,18 @@
+#ifndef ESB_MOUSE_TX_H
+#define ESB_MOUSE_TX_H
+
+#include <stdint.h>
+#include <stdbool.h>
+
+typedef struct{
+   int8_t x;
+   int8_t y;
+}mouse_motion_t;
+
+uint32_t esb_mouse_tx_init(void); //everything needed to initialize esb
+
+bool esb_mouse_tx_send(const mouse_motion_t *p_motion); //keep mouse packet type internal to esb with sequence number
+
+bool esb_mouse_tx_busy(void);
+
+#endif

@@ -74,21 +74,27 @@
 #include "SEGGER_RTT.h"
 
 
-static uint32_t next_cc; //global for incrementing cc by intervals
+#include "esb_mouse_tx.h"
+
+
+static volatile bool m_lfclk_started;
 
 static volatile bool report_pending;   // something new to send
-volatile bool tx_busy;          // ESB is currently sending, wait for esb event handler
+//volatile bool tx_busy;          // ESB is currently sending, wait for esb event handler
 
-static nrf_esb_payload_t        tx_payload = NRF_ESB_CREATE_PAYLOAD(0, 0x01, 0x00, 0x00, 0x00, 0x11, 0x00, 0x00, 0x00);
+//static nrf_esb_payload_t        tx_payload = NRF_ESB_CREATE_PAYLOAD(0, 0x01, 0x00, 0x00, 0x00, 0x11, 0x00, 0x00, 0x00);
 
-static nrf_esb_payload_t        rx_payload;
+//static nrf_esb_payload_t        rx_payload;
 
+#if 0
 //count esb packets sent as well as total retries for radio link integrity testing
 volatile uint32_t packets_sent = 0;
 volatile uint32_t total_retries = 0;
 volatile uint32_t tx_failures = 0; //count tx failures
 
 volatile uint32_t max_attempts = 0; //to calculate maximum attemps
+
+
 
 //mouse movement data packet definition
 typedef struct 
@@ -98,6 +104,8 @@ typedef struct
   int8_t y;
 
 }mouse_packet_t;
+#endif
+
 
 //for entering idle mode when no activity is detected
 typedef enum{
@@ -105,17 +113,18 @@ typedef enum{
    MOUSE_IDLE
 }mouse_power_state_t;
 
-volatile mouse_power_state_t power_state = MOUSE_ACTIVE; //determines ESB transmit frequency
+volatile mouse_power_state_t mouse_power_state = MOUSE_ACTIVE; //determines ESB transmit frequency
 
-static volatile mouse_packet_t current_state; //an instance for asynchronous updating
+static volatile mouse_motion_t mouse_current_state; //an instance for asynchronous updating
 
 ///////////////////////////////////////
 
 
-static uint32_t next_cc; // for updating the rtc after every interrupt
+static uint32_t next_cc; // for incrementing rtc after every interrupt
 
-static nrfx_rtc_t rtc1 = NRFX_RTC_INSTANCE(1); //creates a RTC1 instance
+static nrfx_rtc_t m_counter = NRFX_RTC_INSTANCE(1); //creates a RTC1 instance
 
+#define RTC_COUNTER_MASK 0x00FFFFFFUL //ignore the upper 8 bits, counter is 24 bits
 #define RTC_TICKS_PER_SEC      32768UL
 #define IDLE_TIMEOUT_TICKS     (10 * RTC_TICKS_PER_SEC) //set power state to idle after 10 seconds of inactivity
 
@@ -142,23 +151,25 @@ static void rtc_handler(nrfx_rtc_int_type_t int_type)
     
     report_pending = true; //compare event fired, must send esb packet
 
-    uint32_t now = nrfx_rtc_counter_get(&rtc1); //get current count for idle check
+    uint32_t now = nrfx_rtc_counter_get(&m_counter); //get current count for idle check
 
-    if((now - last_activity_tick) >= IDLE_TIMEOUT_TICKS)
+    uint32_t elapsed = ((now - last_activity_tick) & RTC_COUNTER_MASK);
+
+    if(elapsed >= IDLE_TIMEOUT_TICKS)
     {   
-        power_state = MOUSE_IDLE;     
+        mouse_power_state = MOUSE_IDLE;     
     }
 
     /* check power state in case button press/motion 
      * changed idle/active transmission scheduling */
     uint32_t interval = 
-        (power_state == MOUSE_ACTIVE)
+        (mouse_power_state == MOUSE_ACTIVE)
             ? RTC_INTERVAL_ACTIVE
             : RTC_INTERVAL_IDLE;
 
     next_cc += interval; //already on counter schedule, no need to read count
     
-    nrfx_rtc_cc_set(&rtc1, 0, next_cc, true); 
+    nrfx_rtc_cc_set(&m_counter, 0, next_cc, true); 
     
 }
 
@@ -172,20 +183,20 @@ void rtc1_init(void)
     config.prescaler = 0; // prescaler 0 = full 32.768 kHz resolution
 
     //explicitly clear the count after initialize
-    nrfx_rtc_init(&rtc1, &config, rtc_handler);
-    nrfx_rtc_counter_clear(&rtc1);
+    nrfx_rtc_init(&m_counter, &config, rtc_handler);
+    nrfx_rtc_counter_clear(&m_counter);
 
     next_cc = RTC_INTERVAL_ACTIVE;
    
 
     //set count threshold and enable compare interrupt
-    nrfx_rtc_cc_set(&rtc1, 0, next_cc, true); // first trigger ~1ms
+    nrfx_rtc_cc_set(&m_counter, 0, next_cc, true); // first trigger ~1ms
 
-    nrfx_rtc_enable(&rtc1); //start the counter
+    nrfx_rtc_enable(&m_counter); //start the counter
 }
 
 
-
+#if 0
 //radio transmission callback
 void nrf_esb_event_handler(nrf_esb_evt_t const * p_event)
 {
@@ -232,14 +243,16 @@ void nrf_esb_event_handler(nrf_esb_evt_t const * p_event)
 
 
 //creates esb payload and sends//
-static bool try_send_report(void)
+static bool esb_queue_report(void)
 {
     
     static uint8_t tx_counter = 0;
 
-    mouse_packet_t snapshot = current_state; //copy global mouse state into temp location, because it could change from btn interrupts
+    CRITICAL_REGION_ENTER();
+    mouse_packet_t snapshot = mouse_current_state; //copy global mouse state into temp location, because it could change from btn interrupts
+    CRITICAL_REGION_EXIT();
 
-    snapshot.packet_sequence = tx_counter++; //put sequence number in payload incremented w/respect to transmissions
+    snapshot.packet_sequence = tx_counter; //put sequence number in payload incremented w/respect to transmissions
 
     //copy current mouse state to esb tx payload
     memcpy(tx_payload.data, &snapshot, sizeof(snapshot));
@@ -260,13 +273,14 @@ static bool try_send_report(void)
   
 
     tx_counter++;
-    tx_busy = true;
+    tx_busy = true; //radio transmitting, cleared on TX event in esb event handler
     report_pending = false; //report is being sent to RX dongle. clear for next RTC1 compare interrupt
 
+    return true;
 }
+#endif
 
-
-void clocks_start( void )
+void hfclk_start( void )
 {
     NRF_CLOCK->EVENTS_HFCLKSTARTED = 0;
     NRF_CLOCK->TASKS_HFCLKSTART = 1;
@@ -282,9 +296,9 @@ static void button_handler(nrfx_gpiote_pin_t pin, nrf_gpiote_polarity_t action)
 {
     
 
-    bool was_idle = (power_state == MOUSE_IDLE); //save idle state before waking up the mouse
+    bool was_idle = (mouse_power_state == MOUSE_IDLE); //save idle state before waking up the mouse
 
-    power_state = MOUSE_ACTIVE; //button press means active by definition
+    mouse_power_state = MOUSE_ACTIVE; //button press means active by definition
 
     
     
@@ -292,16 +306,19 @@ static void button_handler(nrfx_gpiote_pin_t pin, nrf_gpiote_polarity_t action)
 
 
 
-    last_activity_tick = nrfx_rtc_counter_get(&rtc1); //samples count on button activity for rtc callback idle testing
+    last_activity_tick = nrfx_rtc_counter_get(&m_counter); //samples count on button activity for rtc callback idle testing
     
     
 
     if(was_idle)
     {
+
+        next_cc = last_activity_tick + RTC_INTERVAL_ACTIVE;
+
         nrfx_rtc_cc_set(
-            &rtc1,
+            &m_counter,
             0,
-            last_activity_tick+RTC_INTERVAL_ACTIVE,
+            next_cc,
             true);
             
     }
@@ -312,20 +329,20 @@ static void button_handler(nrfx_gpiote_pin_t pin, nrf_gpiote_polarity_t action)
   
     if(left && !right)
     {
-        current_state.x = -20;
+        mouse_current_state.x = -20;
         bsp_board_led_invert(BSP_BOARD_LED_2);
     }
     else if(right && !left)
     {
-        current_state.x = 20;    
+        mouse_current_state.x = 20;    
         bsp_board_led_invert(BSP_BOARD_LED_3);
     }
     else // if none or both pressed
     {
-      current_state.x = 0;
+      mouse_current_state.x = 0;
     }
 
-    current_state.y = 0; //vertical velocity ignored for now
+    mouse_current_state.y = 0; //vertical velocity ignored for now
 
 }
 
@@ -365,7 +382,7 @@ void gpio_init( void )
     
 }
 
-
+#if 0
 uint32_t esb_init( void )
 {
     uint32_t err_code;
@@ -398,15 +415,17 @@ uint32_t esb_init( void )
 
     return err_code;
 }
-
+#endif
 
 static void lfclk_handler(nrfx_clock_evt_type_t event)
 {
-  
-  if(event == NRFX_CLOCK_EVT_LFCLK_STARTED)
-  {
-    bsp_board_led_invert(BSP_BOARD_LED_3);
-  }
+    //only handle lfclk event, ignore others
+    if(event != NRFX_CLOCK_EVT_LFCLK_STARTED)
+    {
+        return;
+    }
+
+    m_lfclk_started = true; //set the lfclk started flag for rtc1 startup timing
 }
 
 
@@ -415,8 +434,7 @@ static void lfclk_handler(nrfx_clock_evt_type_t event)
 int main(void)
 {
 
-    NVIC_EnableIRQ(RTC1_IRQn);
-  
+
     ret_code_t err_code;
 
     
@@ -433,17 +451,22 @@ int main(void)
 
     NRF_LOG_DEFAULT_BACKENDS_INIT();
 
-    clocks_start(); //start hf clock
+    hfclk_start(); //start hf clock
 
     err_code = nrfx_clock_init(lfclk_handler);
+    APP_ERROR_CHECK(err_code);
 
     nrfx_clock_lfclk_start();
 
-    rtc1_init(); //initialize RTC1
+    while(!nrfx_clock_lfclk_is_running())
+    {
+       
+    }
+
+    rtc1_init(); //initialize RTC1 after lfclk started
    
-
-    err_code = esb_init();
-
+    err_code = esb_mouse_tx_init();
+    //err_code = esb_init();
     APP_ERROR_CHECK(err_code);
 
    
@@ -453,31 +476,43 @@ int main(void)
 
             static uint8_t idle_divider = 0;
 
-            if(report_pending && !tx_busy)
+            if(report_pending && !esb_mouse_tx_busy())
             {
                 
-                try_send_report();
-                                
-               
-                if(power_state == MOUSE_IDLE)
+                mouse_motion_t motion;
+
+                CRITICAL_REGION_ENTER();
+                motion = mouse_current_state;
+                CRITICAL_REGION_EXIT();
+            
+
+
+
+                if(esb_mouse_tx_send(&motion))
                 {
+                    report_pending = false;
+                }
+                //esb_queue_report();
+                                
+            } 
+            
+            if(mouse_power_state == MOUSE_IDLE) //report pending every 100 ms in idle
+            {
 
-                    if(idle_divider >= 10)
-                    {
+                if(idle_divider >= 10) //10 * 100 ms idle period, led toggles once per second 
+                {
                     
-                        bsp_board_led_invert(BSP_BOARD_LED_0);
-                        idle_divider = 0;
-                    }
-
-                    idle_divider++; //increment if idle mode
+                    bsp_board_led_invert(BSP_BOARD_LED_0);
+                    idle_divider = 0;
                 }
 
-           }  
+                idle_divider++; //increment if idle mode
+            }
+
+             
             __WFE(); //idles cpu while waiting for esb, gpiote, or rtc1 to fire interrupts
       
 
     }
-
-
 
 }
