@@ -52,6 +52,7 @@
 #define NRFX_RTC_ENABLED 1
 #define NRFX_RTC1_ENABLED 1
 
+
 #ifndef NRFX_RTC_ENABLED
 #define NRFX_RTC_ENABLED 1
 #endif
@@ -76,7 +77,17 @@
 #define NRFX_RTC_DEFAULT_CONFIG_RELIABLE 0
 #endif
 
-////////////////////////
+/* SPI master module config */
+
+#define NRFX_SPIM_ENABLED 1
+#define NRFX_SPIM1_ENABLED 1
+
+#define NRFX_SPIM_DEFAULT_CONFIG_IRQ_PRIORITY 6
+
+
+#define NRFX_SPIM_MISO_PULL_CFG NRF_GPIO_PIN_NOPULL
+
+
 
 //for GPIOTE
 #define NRFX_GPIOTE_ENABLED 1
@@ -663,7 +674,7 @@
 // <e> NRF_LOG_BACKEND_RTT_ENABLED - nrf_log_backend_rtt - Log RTT backend
 //==========================================================
 #ifndef NRF_LOG_BACKEND_RTT_ENABLED
-#define NRF_LOG_BACKEND_RTT_ENABLED 0
+#define NRF_LOG_BACKEND_RTT_ENABLED 1
 #endif
 // <o> NRF_LOG_BACKEND_RTT_TEMP_BUFFER_SIZE - Size of buffer for partially processed strings. 
 // <i> Size of the buffer is a trade-off between RAM usage and processing.
@@ -741,7 +752,7 @@
 // <e> NRF_LOG_ENABLED - nrf_log - Logger
 //==========================================================
 #ifndef NRF_LOG_ENABLED
-#define NRF_LOG_ENABLED 0
+#define NRF_LOG_ENABLED 1
 #endif
 // <h> Log message pool - Configuration of log message pool
 

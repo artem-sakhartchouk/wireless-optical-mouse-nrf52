@@ -78,14 +78,21 @@
 #include "mouse_scheduler.h"
 
 
+#include "sensor.h"
+
+
+pmw3389_status_t sensor_status;
+
 static volatile mouse_motion_t mouse_current_state; //an instance for asynchronous updating
 
 static volatile bool m_lfclk_started;
 
 
 
-
-void hfclk_start( void )
+/* Start the external high-frequency clock required by ESB radio.
+ * The function blocks until the the crystal oscillator reports it is running
+ */
+static void hfclk_start( void )
 {
     NRF_CLOCK->EVENTS_HFCLKSTARTED = 0;
     NRF_CLOCK->TASKS_HFCLKSTART = 1;
@@ -95,23 +102,23 @@ void hfclk_start( void )
 
 
 
-//gpiote button interrupt handler // GPIOTE interrupt updates button state
-// Main loop uses button state to generate mouse movement packets.
+/* Update the temporary button-based motion source.
+ *
+ * Either button edge counts as activity and returns the scheduler to its
+ * active report rate. Holding one button produces a fixed horizontal delta;
+ * pressing neither or both produces zero motion.
+ */
 static void button_handler(nrfx_gpiote_pin_t pin, nrf_gpiote_polarity_t action)
 {
     
 
+    (void) pin;
+    (void) action;
+
     mouse_scheduler_mark_active(); //inform tx scheduler of motion activity
 
 
-  
-    bsp_board_led_off(BSP_BOARD_LED_0); //debug code
-
-
-
-
-
-
+ 
     bool left = (nrf_gpio_pin_read(BUTTON_1) == 0);
     bool right = (nrf_gpio_pin_read(BUTTON_2) == 0);
   
@@ -130,31 +137,38 @@ static void button_handler(nrfx_gpiote_pin_t pin, nrf_gpiote_polarity_t action)
       mouse_current_state.x = 0;
     }
 
-    mouse_current_state.y = 0; //vertical velocity ignored for now
+    /* buttons currently simulate horizontal motion only */
+    mouse_current_state.y = 0; 
 
 }
 
 
-//initializes buttons for gpiote
+/* Configure GPIOTE for DK button pins.
+ *
+ * Either button edge triggers the temporary button-based motion callback
+ */
 static void buttons_init(void)
 {
 
   nrfx_gpiote_init();
 
 
-
+  /* generate an interrupt on both press and release
+   * high-accuracy mode uses a dedicated GPIOTE channel
+   */
   nrfx_gpiote_in_config_t config =
-        NRFX_GPIOTE_CONFIG_IN_SENSE_TOGGLE(true); //macro configures the pin to high-accuracy
+        NRFX_GPIOTE_CONFIG_IN_SENSE_TOGGLE(true); 
 
-  config.pull = NRF_GPIO_PIN_PULLUP; //specifies the pullup setting for the config used for the buttons
+  config.pull = NRF_GPIO_PIN_PULLUP; 
+
+  APP_ERROR_CHECK(
+      nrfx_gpiote_in_init(BUTTON_1, &config, button_handler)); 
+
+  APP_ERROR_CHECK(
+      nrfx_gpiote_in_init(BUTTON_2, &config, button_handler));
 
 
-  nrfx_gpiote_in_init(BUTTON_1, &config, button_handler); //configures gpiote for each button, and connects the callback function
-  nrfx_gpiote_in_init(BUTTON_2, &config, button_handler);
-
-
-
-  nrfx_gpiote_in_event_enable(BUTTON_1, true); //enables the in interrupt event for each button
+  nrfx_gpiote_in_event_enable(BUTTON_1, true); 
   nrfx_gpiote_in_event_enable(BUTTON_2, true);
 
 
@@ -162,11 +176,10 @@ static void buttons_init(void)
 
 
 
-void gpio_init( void )
+static void leds_init( void )
 {
     
     bsp_board_init(BSP_INIT_LEDS);
-    //nrf_gpio_cfg_input(BUTTON_1, NRF_GPIO_PIN_PULLUP);
     
 }
 
@@ -174,13 +187,7 @@ void gpio_init( void )
 
 static void lfclk_handler(nrfx_clock_evt_type_t event)
 {
-    //only handle lfclk event, ignore others
-    if(event != NRFX_CLOCK_EVT_LFCLK_STARTED)
-    {
-        return;
-    }
-
-    m_lfclk_started = true; //set the lfclk started flag for rtc1 startup timing
+    (void)event;
 }
 
 
@@ -189,24 +196,20 @@ static void lfclk_handler(nrfx_clock_evt_type_t event)
 int main(void)
 {
 
-
     ret_code_t err_code;
 
-    
-    gpio_init();
-
-  
-    buttons_init(); //for gpiote
+    /* initialize board LEDs and temporary button-based motion input */
+    leds_init();
+    buttons_init(); 
 
 
-
-
+    /* initialize logging for modules that emit diagnostic messages */
     err_code = NRF_LOG_INIT(NULL);
     APP_ERROR_CHECK(err_code);
-
     NRF_LOG_DEFAULT_BACKENDS_INIT();
 
-    hfclk_start(); //start hf clock
+    /* start clocks required by ESB and the RTC scheduler */
+    hfclk_start(); 
 
     err_code = nrfx_clock_init(lfclk_handler);
     APP_ERROR_CHECK(err_code);
@@ -215,19 +218,29 @@ int main(void)
 
     while(!nrfx_clock_lfclk_is_running())
     {
-       
     }
 
 
-    mouse_scheduler_init();
-    //rtc1_init(); //initialize RTC1 after lfclk started
-   
-    err_code = esb_mouse_tx_init();
-    //err_code = esb_init();
+    /* initialize app modules after clocks are running */
+    mouse_scheduler_init();  
+    err_code = esb_mouse_tx_init();  
     APP_ERROR_CHECK(err_code);
 
    
-     
+    sensor_status = pmw3389_init();
+
+    if (sensor_status == PMW3389_OK)
+    {
+        NRF_LOG_INFO("PMW3389 detected");
+    }
+    else
+    {
+        NRF_LOG_ERROR(
+            "PMW3389 initialization failed: %u",
+            sensor_status
+        );
+    }
+
     while (true)
     {
 
@@ -243,30 +256,34 @@ int main(void)
                 CRITICAL_REGION_EXIT();
             
 
-
-
                 if(esb_mouse_tx_send(&motion))
                 {
                     mouse_scheduler_report_queued(); //clear pending flag
-                }
-                //esb_queue_report();
-                                
-            } 
-            
-            if(mouse_scheduler_power_state_get() == MOUSE_IDLE) //report pending every 100 ms in idle
-            {
+                
+                    if(mouse_scheduler_power_state_get() == MOUSE_IDLE) //report pending every 100 ms in idle
+                    {
 
-                if(idle_divider >= 10) //10 * 100 ms idle period, led toggles once per second 
-                {
+                        if(++idle_divider >= 10) //10 * 100 ms idle period, led toggles once per second 
+                        {
                     
-                    bsp_board_led_invert(BSP_BOARD_LED_0);
-                    idle_divider = 0;
+                            bsp_board_led_invert(BSP_BOARD_LED_0);
+                            idle_divider = 0;
+                        }
+
+                
+                    }
+                    else
+                    {
+                        idle_divider = 0; //start from zero for next idle 
+                    }
+
                 }
 
-                idle_divider++; //increment if idle mode
-            }
 
+            }
              
+            UNUSED_RETURN_VALUE(NRF_LOG_PROCESS());
+
             __WFE(); //idles cpu while waiting for esb, gpiote, or rtc1 to fire interrupts
       
 
