@@ -119,5 +119,6 @@
     </file>
     <file file_name="../../../../../../modules/nrfx/drivers/src/nrfx_spim.c" />
     <file file_name="../../../sensor.c" />
+    <file file_name="../../../pmw3389_srom.c" />
   </project>
 </solution>

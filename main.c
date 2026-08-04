@@ -87,6 +87,7 @@ static volatile mouse_motion_t mouse_current_state; //an instance for asynchrono
 
 static volatile bool m_lfclk_started;
 
+static volatile bool m_sensor_poll_due = false;
 
 
 /* Start the external high-frequency clock required by ESB radio.
@@ -241,14 +242,69 @@ int main(void)
         );
     }
 
+    pmw3389_info_t info;
+
+    bool read_ok;
+    read_ok = pmw3389_read_info(&info);
+
+        NRF_LOG_INFO(
+        "PMW3389: PID=0x%02X REV=0x%02X INV=0x%02X SROM=0x%02X",
+        info.product_id,
+        info.revision_id,
+        info.inverse_product_id,
+        info.srom_id
+    );
+
     while (true)
     {
 
             static uint8_t idle_divider = 0;
 
+
+            #if 0
+            if(m_sensor_poll_due)
+            {
+                m_sensor_poll_due = false;
+            
+                pmw3389_motion_t motion;
+
+                if (pmw3389_read_motion(&motion))
+                {
+                    if ((motion.dx != 0) || (motion.dy != 0))
+                    {
+                        NRF_LOG_INFO("DX=%d DY=%d",
+                             motion.dx,
+                             motion.dy);
+                    }
+            
+                }
+
+            }
+
+            
+            #endif
+
+
             if(mouse_scheduler_report_pending() && !esb_mouse_tx_busy())
             {
                 
+                
+                pmw3389_motion_t sensor_motion;
+
+                pmw3389_read_motion(&sensor_motion);
+                #if 0
+                {
+                    if ((sensor_motion.dx != 0) || (sensor_motion.dy != 0))
+                    {
+                        NRF_LOG_INFO("DX=%d DY=%d",
+                             sensor_motion.dx,
+                             sensor_motion.dy);
+                    }
+            
+                }
+                #endif
+
+
                 mouse_motion_t motion;
 
                 CRITICAL_REGION_ENTER();
