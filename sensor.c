@@ -59,6 +59,31 @@ typedef enum
 #define PMW3389_SROM_ID_EXPECTED             0xE8u
 
 
+/* struct to hold data returned by motion burst command from the pmw3389 */
+typedef struct __attribute__((packed))
+{
+    uint8_t motion;
+    uint8_t observation;
+    uint8_t dx_l;
+    uint8_t dx_h;
+    uint8_t dy_l;
+    uint8_t dy_h;
+    uint8_t squal;
+    uint8_t raw_data_sum;
+    uint8_t max_raw_data;
+    uint8_t min_raw_data;
+    uint8_t shutter_upper;
+    uint8_t shutter_lower;
+} pmw3389_burst_t;
+
+
+_Static_assert(sizeof(pmw3389_burst_t) == 12,
+               "Unexpected PMW3389 burst size");
+
+
+static bool m_burst_initialized = false; //burst mode needs to be reinitialized after any other standard register read.
+
+static pmw3389_burst_t m_last_burst;
 
 /*
  * The PMW3389 sensor returns accumulated 16-bit deltas that 
@@ -133,6 +158,9 @@ static pmw3389_status_t pmw3389_spi_init(void)
 
 static uint8_t pmw3389_read_reg(pmw3389_register_t reg)
 {
+
+    m_burst_initialized = false;
+
     uint8_t address = (uint8_t)reg & 0x7Fu;
     uint8_t dummy   = 0x00u;
     uint8_t value   = 0x00u;
@@ -167,7 +195,13 @@ static uint8_t pmw3389_read_reg(pmw3389_register_t reg)
 static pmw3389_status_t pmw3389_write_reg(pmw3389_register_t reg, uint8_t value)
 {
     
+
+    if(reg != PMW3389_REG_MOTION_BURST)
+    {
+        m_burst_initialized = false;
+    }
     
+
     uint8_t tx_buf[2] =
     {
         ((uint8_t)reg) | 0x80u,
@@ -243,6 +277,97 @@ static pmw3389_status_t pmw3389_latch_motion(void)
     return pmw3389_write_reg(PMW3389_REG_MOTION, 0x00u);
 }
 
+
+
+pmw3389_status_t pmw3389_read_motion_burst(pmw3389_motion_t *motion)
+{
+    if (motion == NULL)
+    {
+        return PMW3389_INVALID_PARAMETER;
+    }
+
+
+    /* reinitialize burst mode if other register access has occured */
+    if (!m_burst_initialized)
+    {
+
+        pmw3389_status_t status = 
+            pmw3389_write_reg(PMW3389_REG_MOTION_BURST, 0x00);
+
+        if(status != PMW3389_OK)
+        {
+            return status;
+        }
+
+        m_burst_initialized = true;
+    }
+
+    
+    uint8_t address = PMW3389_REG_MOTION_BURST & 0x7Fu; //send a read instruction to the burst motion register adress
+
+
+    // CS low
+    nrf_gpio_pin_clear(PMW3389_PIN_CS);
+
+
+    // Send Motion_Burst address
+    nrfx_spim_xfer_desc_t addr_xfer =
+        NRFX_SPIM_XFER_TX(&address, 1);
+
+    
+    nrfx_err_t err =
+        nrfx_spim_xfer(&m_spim, &addr_xfer, 0);
+    
+    if (err != NRFX_SUCCESS)
+    {
+        nrf_gpio_pin_set(PMW3389_PIN_CS);
+        nrf_delay_us(20);
+
+        return PMW3389_ERROR_SPI_TRANSFER;
+    }
+
+
+    // wait >= 35 us
+    nrf_delay_us(35);
+
+
+    nrfx_spim_xfer_desc_t burst_xfer =
+    NRFX_SPIM_XFER_RX(
+        (uint8_t *)&m_last_burst,
+        sizeof(m_last_burst));
+
+    // clock out 12 bytes continuously
+
+    err = nrfx_spim_xfer(
+        &m_spim,
+        &burst_xfer,
+        0);
+
+    
+
+    // CS high
+    nrf_gpio_pin_set(PMW3389_PIN_CS);
+    nrf_delay_us(20);
+
+
+    if (err != NRFX_SUCCESS)
+    {
+        return PMW3389_ERROR_SPI_TRANSFER;
+    }
+
+    
+    
+    motion->motion = m_last_burst.motion;
+
+    motion->dx = 
+        (int16_t)(((uint16_t) m_last_burst.dx_h <<8) | m_last_burst.dx_l);
+
+    motion->dy = 
+        (int16_t)(((uint16_t) m_last_burst.dy_h <<8) | m_last_burst.dy_l);
+
+    
+    return PMW3389_OK;
+}
 
 
 bool pmw3389_read_motion(pmw3389_motion_t *motion)

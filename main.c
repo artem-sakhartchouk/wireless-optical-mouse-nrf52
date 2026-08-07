@@ -294,7 +294,7 @@ int main(void)
 
                 pmw3389_motion_t sensor_motion;
 
-                if(pmw3389_read_motion(&sensor_motion))
+                if(pmw3389_read_motion_burst(&sensor_motion) == PMW3389_OK)
                 {
                 
                     NRF_LOG_INFO("Sensor dx=%d dy=%d",

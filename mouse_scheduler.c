@@ -89,26 +89,24 @@ void mouse_scheduler_init(void)
 
 
 
+
 void mouse_scheduler_mark_active(void)
 {
-    
-    bool was_idle = (m_power_state == MOUSE_IDLE);
-
     uint32_t now = nrfx_rtc_counter_get(&m_counter);
 
     m_last_activity_tick = now;
-    m_power_state = MOUSE_ACTIVE;
 
-    //make sure next cc is precise relative to long idle timing
-    if(was_idle)
+    if (m_power_state == MOUSE_IDLE)
     {
+        m_power_state = MOUSE_ACTIVE;
+
         m_next_cc = now + RTC_INTERVAL_ACTIVE;
 
         nrfx_rtc_cc_set(&m_counter, 0, m_next_cc, true);
-     
     }
-
 }
+
+
 
 bool mouse_scheduler_report_pending(void)
 {

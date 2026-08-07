@@ -45,6 +45,6 @@ bool pmw3389_is_present(void);
 
 bool pmw3389_read_motion(pmw3389_motion_t *motion);
 
-
+pmw3389_status_t pmw3389_read_motion_burst(pmw3389_motion_t *motion);
 
 #endif
