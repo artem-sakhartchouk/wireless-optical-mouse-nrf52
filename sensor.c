@@ -59,16 +59,35 @@ typedef enum
 #define PMW3389_SROM_ID_EXPECTED             0xE8u
 
 
+
+/*
+ * The PMW3389 sensor returns accumulated 16-bit deltas that 
+ * can overflow a 16-bit register between readout. Instead, motion deltas are  
+ * stored in 32-bit variables and read out incrementally by the radio scheduler
+ */
+typedef struct
+{
+    int32_t x;
+    int32_t y;
+} mouse_motion_accumulator_t;
+
+static mouse_motion_accumulator_t m_accumulated_motion;
+
+
+
 /*
  * SPIM driver instance describing the hardware peripheral used by
  * the PMW3389. The nrfx driver uses this handle to access both the
  * SPIM1 register block and its associated driver state.
  */
-
 #define PMW3389_SPIM_INSTANCE  1
 
 static const nrfx_spim_t m_spim =
     NRFX_SPIM_INSTANCE(PMW3389_SPIM_INSTANCE);
+
+
+
+
 
 
 

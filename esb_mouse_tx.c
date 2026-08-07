@@ -9,15 +9,16 @@
 #include "nrf_error.h"
 
 //mouse movement data packet definition
-typedef struct 
+typedef struct __attribute__((packed))
 {
   uint8_t packet_sequence;
-  int8_t x;
-  int8_t y;
+  int16_t x;
+  int16_t y;
 
 }mouse_packet_t;
 
-
+_Static_assert(sizeof(mouse_packet_t) == 5,
+               "Unexpected ESB mouse packet size");
 
 // esb payloads
 static nrf_esb_payload_t        tx_payload = 
@@ -27,7 +28,7 @@ static nrf_esb_payload_t        tx_payload =
     .noack = false
 };
 
-static nrf_esb_payload_t        rx_payload;
+static nrf_esb_payload_t        rx_payload; //to recieve ack payloads from the dongle esb receiver
 
 static volatile bool m_tx_busy = false; //set on esb send and cleared in esb event handler
 static uint8_t m_tx_count = 0; //for packet sequencing
@@ -78,9 +79,12 @@ void nrf_esb_event_handler(nrf_esb_evt_t const * p_event)
             {
                 if (rx_payload.length > 0)
                 {
-                    NRF_LOG_DEBUG("RX RECEIVED PAYLOAD");
+                    NRF_LOG_INFO("RECEIVED Prefix: 0x%02X", rx_payload.data[0]);
                 }
             }
+            break;
+
+        default:
             break;
     }
 }

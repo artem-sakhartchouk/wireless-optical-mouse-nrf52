@@ -79,7 +79,7 @@
 
 
 #include "sensor.h"
-
+#include "mouse_motion.h"
 
 pmw3389_status_t sensor_status;
 
@@ -288,61 +288,80 @@ int main(void)
             if(mouse_scheduler_report_pending() && !esb_mouse_tx_busy())
             {
                 
-                
+                NRF_LOG_INFO("Scheduler tick");
+
+                mouse_scheduler_report_queued(); //clear pending flag
+
                 pmw3389_motion_t sensor_motion;
 
-                pmw3389_read_motion(&sensor_motion);
-                #if 0
+                if(pmw3389_read_motion(&sensor_motion))
                 {
-                    if ((sensor_motion.dx != 0) || (sensor_motion.dy != 0))
-                    {
-                        NRF_LOG_INFO("DX=%d DY=%d",
-                             sensor_motion.dx,
-                             sensor_motion.dy);
-                    }
-            
-                }
-                #endif
-
-
-                mouse_motion_t motion;
-
-                CRITICAL_REGION_ENTER();
-                motion = mouse_current_state;
-                CRITICAL_REGION_EXIT();
-            
-
-                if(esb_mouse_tx_send(&motion))
-                {
-                    mouse_scheduler_report_queued(); //clear pending flag
                 
-                    if(mouse_scheduler_power_state_get() == MOUSE_IDLE) //report pending every 100 ms in idle
-                    {
+                    NRF_LOG_INFO("Sensor dx=%d dy=%d",
+                    sensor_motion.dx,
+                    sensor_motion.dy);
 
-                        if(++idle_divider >= 10) //10 * 100 ms idle period, led toggles once per second 
-                        {
+
+                    if(sensor_motion.dx != 0 || sensor_motion.dy != 0)
+                    {
+                        mouse_motion_accumulate(sensor_motion.dx, sensor_motion.dy);
+                        mouse_scheduler_mark_active();
+                    }    
+                
+                }
+        
+
+
+                mouse_motion_t report ={0};
+
+                if(mouse_motion_peek_report(&report))
+                {
+
                     
-                            bsp_board_led_invert(BSP_BOARD_LED_0);
-                            idle_divider = 0;
-                        }
+
+                    NRF_LOG_INFO("report x=%d y=%d",
+                    
+                    report.x,
+                    report.y);
+
+                    if(esb_mouse_tx_send(&report))
+                    {
+                        mouse_motion_commit_report(&report);
+                        
+                    
+                    }
+                }
+     
+                
+                
+                 
+                
+                if(mouse_scheduler_power_state_get() == MOUSE_IDLE) //report pending every 100 ms in idle
+                {        
+
+                    if(++idle_divider >= 10) //10 * 100 ms idle period, led toggles once per second 
+                    {
+                    
+                        bsp_board_led_invert(BSP_BOARD_LED_0);
+                        idle_divider = 0;
+                    }
 
                 
-                    }
-                    else
-                    {
-                        idle_divider = 0; //start from zero for next idle 
-                    }
-
+                }
+                else
+                {
+                    idle_divider = 0; //start from zero for next idle 
                 }
 
-
+                
             }
+
+            
              
             UNUSED_RETURN_VALUE(NRF_LOG_PROCESS());
 
             __WFE(); //idles cpu while waiting for esb, gpiote, or rtc1 to fire interrupts
-      
-
+     
     }
 
 }

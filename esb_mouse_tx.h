@@ -4,10 +4,9 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-typedef struct{
-   int8_t x;
-   int8_t y;
-}mouse_motion_t;
+#include "mouse_motion.h"
+
+
 
 uint32_t esb_mouse_tx_init(void); //everything needed to initialize esb
 

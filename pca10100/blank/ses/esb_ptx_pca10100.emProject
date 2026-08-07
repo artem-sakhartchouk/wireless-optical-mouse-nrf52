@@ -110,15 +110,9 @@
     <file file_name="../../../../../../modules/nrfx/drivers/include/nrfx_rtc.h" />
     <file file_name="../../../esb_mouse_tx.c" />
     <file file_name="../../../mouse_scheduler.c" />
-    <file file_name="mouse_motion.h" />
-    <file file_name="sensor.h">
-      <configuration Name="Debug" build_exclude_from_build="Yes" />
-    </file>
-    <file file_name="sensor.c">
-      <configuration Name="Debug" build_exclude_from_build="Yes" />
-    </file>
     <file file_name="../../../../../../modules/nrfx/drivers/src/nrfx_spim.c" />
     <file file_name="../../../sensor.c" />
     <file file_name="../../../pmw3389_srom.c" />
+    <file file_name="../../../mouse_motion.c" />
   </project>
 </solution>
