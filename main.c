@@ -81,6 +81,17 @@
 #include "sensor.h"
 #include "mouse_motion.h"
 
+
+#define MOUSE_BUTTON_LEFT   (1u << 0)
+#define MOUSE_BUTTON_RIGHT  (1u << 1)
+
+static volatile uint8_t m_buttons = 0;
+static volatile bool m_buttons_changed = false;
+
+
+
+
+
 pmw3389_status_t sensor_status;
 
 static volatile mouse_motion_t mouse_current_state; //an instance for asynchronous updating
@@ -109,38 +120,31 @@ static void hfclk_start( void )
  * active report rate. Holding one button produces a fixed horizontal delta;
  * pressing neither or both produces zero motion.
  */
-static void button_handler(nrfx_gpiote_pin_t pin, nrf_gpiote_polarity_t action)
+static void button_handler(nrfx_gpiote_pin_t pin,
+                           nrf_gpiote_polarity_t action)
 {
-    
+    (void)pin;
+    (void)action;
 
-    (void) pin;
-    (void) action;
+    uint8_t new_buttons = 0;
 
-    mouse_scheduler_mark_active(); //inform tx scheduler of motion activity
-
-
- 
-    bool left = (nrf_gpio_pin_read(BUTTON_1) == 0);
-    bool right = (nrf_gpio_pin_read(BUTTON_2) == 0);
-  
-    if(left && !right)
+    if (nrf_gpio_pin_read(BUTTON_1) == 0)
     {
-        mouse_current_state.x = -20;
-        bsp_board_led_invert(BSP_BOARD_LED_2);
-    }
-    else if(right && !left)
-    {
-        mouse_current_state.x = 20;    
-        bsp_board_led_invert(BSP_BOARD_LED_3);
-    }
-    else // if none or both pressed
-    {
-      mouse_current_state.x = 0;
+        new_buttons |= MOUSE_BUTTON_LEFT;
     }
 
-    /* buttons currently simulate horizontal motion only */
-    mouse_current_state.y = 0; 
+    if (nrf_gpio_pin_read(BUTTON_2) == 0)
+    {
+        new_buttons |= MOUSE_BUTTON_RIGHT;
+    }
 
+    if (new_buttons != m_buttons)
+    {
+        m_buttons = new_buttons;
+        m_buttons_changed = true;
+
+        mouse_scheduler_mark_active();
+    }
 }
 
 
@@ -314,21 +318,25 @@ int main(void)
 
                 mouse_motion_t report ={0};
 
-                if(mouse_motion_peek_report(&report))
+
+                bool motion_pending = mouse_motion_peek_report(&report); //return true if dx or dy is non-zero
+
+                if(motion_pending || m_buttons_changed)
                 {
 
                     
+                    
+                    uint8_t buttons = m_buttons;
 
                     NRF_LOG_INFO("report x=%d y=%d",
                     
                     report.x,
                     report.y);
 
-                    if(esb_mouse_tx_send(&report))
+                    if(esb_mouse_tx_send(&report, buttons))
                     {
                         mouse_motion_commit_report(&report);
-                        
-                    
+                                    
                     }
                 }
      

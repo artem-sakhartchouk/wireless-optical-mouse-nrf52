@@ -12,12 +12,13 @@
 typedef struct __attribute__((packed))
 {
   uint8_t packet_sequence;
+  uint8_t buttons;
   int16_t x;
   int16_t y;
 
 }mouse_packet_t;
 
-_Static_assert(sizeof(mouse_packet_t) == 5,
+_Static_assert(sizeof(mouse_packet_t) == 6,
                "Unexpected ESB mouse packet size");
 
 // esb payloads
@@ -126,7 +127,7 @@ uint32_t esb_mouse_tx_init( void )
 
 
 
-bool esb_mouse_tx_send(const mouse_motion_t *p_motion)
+bool esb_mouse_tx_send(const mouse_motion_t *p_motion, uint8_t buttons)
 {
     
     if(p_motion == NULL)
@@ -143,6 +144,7 @@ bool esb_mouse_tx_send(const mouse_motion_t *p_motion)
     mouse_packet_t packet = 
     {
         .packet_sequence = m_tx_count,
+        .buttons = buttons,
         .x = p_motion->x,
         .y = p_motion->y
     };
