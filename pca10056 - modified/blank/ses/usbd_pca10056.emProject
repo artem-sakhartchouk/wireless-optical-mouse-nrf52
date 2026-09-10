@@ -120,6 +120,7 @@
     <file file_name="../../../esb_mouse.h" />
     <file file_name="../../../status_leds.c" />
     <file file_name="../../../platform.c" />
+    <file file_name="../../../../../../modules/nrfx/drivers/src/nrfx_rng.c" />
   </project>
   <configuration
     Name="Release"

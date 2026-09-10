@@ -48,6 +48,16 @@
 #endif
 // <h> nRF_Drivers 
 
+
+#ifndef NRFX_RNG_ENABLED
+#define NRFX_RNG_ENABLED 1
+#endif
+
+#define NRFX_RNG_CONFIG_ERROR_CORRECTION 1
+#define NRFX_RNG_CONFIG_IRQ_PRIORITY 6
+
+
+
 //==========================================================
 // <e> GPIOTE_ENABLED - nrf_drv_gpiote - GPIOTE peripheral driver - legacy layer
 //==========================================================

@@ -17,24 +17,26 @@ void usb_mouse_init(void);
  *
  * Call repeatedly from the main loop.
  */
-void usb_mouse_process(void);
+void usb_mouse_remote_wakeup_process(void);
 
 /**
  * Returns true when the USB host has configured the HID interface.
  */
 bool usb_mouse_ready(void);
 
-/**
- * Send a mouse movement report.
- *
- * Returns false if the endpoint is busy or USB is not configured.
- */
-static bool usb_mouse_send(const uint8_t *data, uint8_t length);
+
 
 bool usb_mouse_send_report(
     uint8_t buttons,
-    int8_t x,
-    int8_t y,
+    int16_t x,
+    int16_t y,
     int8_t wheel);
+
+
+
+/**
+ * Returns true when the USB host has configured the HID interface.
+ */
+void usb_mouse_request_remote_wakeup(void);
 
 #endif

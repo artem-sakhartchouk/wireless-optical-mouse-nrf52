@@ -54,6 +54,7 @@
  
 #include "app_error.h" //need this to detect usb and esb errors 
 
+
 #include "status_leds.h"
 #include "usb_mouse.h"
 #include "esb_mouse.h"
@@ -61,25 +62,40 @@
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 int main(void)
 {
-    ret_code_t ret;
-
+   
     platform_init();
-
-    
-    //nrf_power_resetreas_clear(nrf_power_resetreas_get());
-
-    //initialize led module  
     leds_init();
   
-    //initialize radio and usb modules 
+    
+    
     esb_mouse_init();
     usb_mouse_init();
+
+  
 
     while (true)
     {
        
+        /*process remote wakeup requests triggered by button presses*/
+        usb_mouse_remote_wakeup_process();
+
+
         UNUSED_RETURN_VALUE(NRF_LOG_PROCESS());
 
         /* Even if we miss an event enabling USB,
