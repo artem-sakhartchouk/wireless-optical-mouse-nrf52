@@ -5,9 +5,18 @@
 #include "nrf_log.h"
 #include "nrf_drv_usbd.h" 
 #include "nrf_drv_power.h"
-#include "nrf_gpio.h"
 #include "status_leds.h"
 #include "esb_mouse.h"
+
+
+static void usb_tx_reset_state(void);
+
+
+static bool usb_mouse_send_report(
+    uint8_t buttons,
+    int16_t x,
+    int16_t y,
+    int8_t wheel);
 
 
 
@@ -51,7 +60,7 @@
     0x00,                        /* bDeviceProtocol | device protocol (no class specific protocol)                */\
     EP0_MAXPACKETSIZE,           /* bMaxPacketSize0 | maximum packet size (64 bytes)                              */\
     0x15, 0x19,                  /* vendor ID  (0x1915 Nordic)                                                    */\
-    0x0B, 0x52,                  /* product ID (0x520A nRF52 HID mouse on nrf_drv)                                */\
+    0x0B, 0x52,                  /* product ID (0x520B nRF52 HID mouse on nrf_drv)                                */\
     0x01, 0x01,                  /* bcdDevice | final device release number in BCD Format                         */\
     USBD_STRING_MANUFACTURER_IX, /* iManufacturer | index of manufacturer string                                  */\
     USBD_STRING_PRODUCT_IX,      /* iProduct | index of product string                                            */\
@@ -72,8 +81,6 @@ static const uint8_t device_descriptor[] =
 
 #define DEVICE_SELF_POWERED 0
 #define REMOTE_WU           1
-
-//#define USBD_CONFIG_DESCRIPTOR_SIZE   9
 
 #define USBD_CONFIG_DESCRIPTOR_FULL_SIZE   (9 + (9 + 9 + 7))
 
@@ -117,7 +124,7 @@ static const uint8_t device_descriptor[] =
     0x81,         /* bEndpointAddress | endpoint address (IN endpoint, endpoint 1)                */\
     0x03,         /* bmAttributes | endpoint attributes (interrupt)                               */\
     0x08,0x00,    /* bMaxPacketSizeLowByte,bMaxPacketSizeHighByte | maximum packet size (8 bytes) */\
-    0x01          /* bInterval | polling interval (10ms)                                          */
+    0x01          /* bInterval | polling interval (1 ms)                                          */
 
 
 
@@ -285,34 +292,6 @@ static const uint8_t product_string_descriptor[] =
     0xC0            /* End Collection */
 
 
-#if 0
-#define USBD_MOUSE_REPORT_DESCRIPTOR \
-    0x05, 0x01,     /* usage page (generic desktop). Global item, applies to all subsequent items   */\
-    0x09, 0x02,     /* usage (mouse). Local item                                                    */\
-    0xA1, 0x01,     /* collection (application)                                                     */\
-    0x09, 0x01,     /* usage (pointer)                                                              */\
-    0xA1, 0x00,     /* collection (physical)                                                        */\
-    0x05, 0x09,     /*   usage page (buttons). Global item, applies to all subsequent items         */\
-    0x19, 0x01,     /*   usage minimum (1)                                                          */\
-    0x29, 0x08,     /*   usage maximum (8)                                                          */\
-    0x15, 0x00,     /*   logical minimum (0)                                                        */\
-    0x25, 0x01,     /*   logical maximum (1)                                                        */\
-    0x95, 0x08,     /*   report count (8)                                                           */\
-    0x75, 0x01,     /*   report size (1)                                                            */\
-    0x81, 0x02,     /*   input (data, var, abs)                                                     */\
-    0x05, 0x01,     /*   usage page (generic desktop). Global item, applies to all subsequent items */\
-    0x15, 0x81,     /*   logical minimum (-127)                                                     */\
-    0x25, 0x7F,     /*   logical maximum (127)                                                      */\
-    0x75, 0x08,     /*   report size (8)                                                            */\
-    0x09, 0x30,     /*   usage (X)                                                                  */\
-    0x09, 0x31,     /*   usage (Y)                                                                  */\
-    0x09, 0x38,     /*   usage wheel                                                                */\
-    0x95, 0x03,     /*   report count (3)                                                           */\
-    0x81, 0x06,     /*   input (3 position bytes X, Y & roller)                                     */\
-    0xC0,           /* end collection                                                               */\
-    0xC0            /* End Collection                                                               */
-
-#endif
 
 static const uint8_t hid_report_descriptor[] =
 {
@@ -361,7 +340,6 @@ static const uint8_t endpoint_status_active[] = {0,0};
 
 /* Sizes of sub-descriptors within configuration descriptor */
 
-#define CONFIG_DESCRIPTOR_SIZE      9
 #define INTERFACE_DESCRIPTOR_SIZE   9
 #define HID_DESCRIPTOR_SIZE         9
 #define ENDPOINT_DESCRIPTOR_SIZE    7
@@ -393,9 +371,7 @@ static volatile bool m_usbd_configured = false; //set if device is configured an
 static volatile bool m_usbd_suspended = false; //set if device suspended by host
 static volatile bool m_usbd_rwu_enabled = false; //host can enable remote wakeup
 
-static volatile bool m_usbd_suspend_state_req = false; //set if host wants to suspend the device
 
-//static uint8_t m_previous_buttons; //global for storing incoming button states for click detect for usb rwu
 
 
 static mouse_input_report_t m_current_report;
@@ -416,8 +392,6 @@ static ret_code_t ep_configuration(uint8_t index)
         nrf_drv_usbd_ep_enable(NRF_DRV_USBD_EPIN1);
         m_usbd_configured = true;
         led_on(LED_GREEN);
-        //led_set_mode(LED_GREEN,LED_MODE_BLINK,500);
-        //nrf_gpio_pin_clear(12); // force OFF when configured
         nrf_drv_usbd_setup_clear();
     }
     else if ( index == 0 )
@@ -833,7 +807,7 @@ static void power_usb_event_handler(nrf_drv_power_usb_evt_t event)
         {
             nrf_drv_usbd_disable();
         }
-        /* Turn OFF LEDs */
+        
         break;
     case NRF_DRV_POWER_USB_EVT_READY:
         NRF_LOG_INFO("USB ready");
@@ -878,6 +852,16 @@ static usb_tx_ctx_t m_tx =
 }; 
 
 
+static void usb_tx_reset_state(void)
+{
+    m_tx.state = USB_TX_IDLE;
+    m_tx.length = 0;
+    m_tx.pending = false;
+    m_current_report_valid = false;
+}
+
+
+
 //hid mouse report definition
 typedef struct __attribute__((packed))
 {
@@ -915,7 +899,7 @@ const char* usb_err_to_str(ret_code_t err)
  ******************************************************************************/
 
 //modular function that is called on SOF event interrupts, for consistent report timing
-void usb_on_sof(void)
+static void usb_on_sof(void)
 {
     if (!m_usbd_configured|| m_usbd_suspended) //abort if usbd not configured
         return;
@@ -984,13 +968,15 @@ static void usbd_event_handler(nrf_drv_usbd_evt_t const * const p_event)
         {
 
 
+            usb_tx_reset_state();
+
+
             m_usbd_suspended = false;
             m_usbd_rwu_enabled = false;
 
             ret_code_t ret = ep_configuration(0);
             ASSERT(ret == NRF_SUCCESS);
             UNUSED_VARIABLE(ret);
-            m_usbd_suspend_state_req = false;
             break;
         }
     case NRF_DRV_USBD_EVT_SOF:
@@ -1040,7 +1026,7 @@ static void usbd_event_handler(nrf_drv_usbd_evt_t const * const p_event)
             }
 
 
-            m_tx.state = USB_TX_IDLE; //endpoint IN1 has successfully sent data to host and is available
+            m_tx.state = USB_TX_IDLE; // endpoint IN1 is available for the next transfer
             
         }
         else
@@ -1188,7 +1174,7 @@ void usb_mouse_init(void)
 
 
 
-//function called by the esb module when rx packet with motion payload arrives updates global mouse state struct 
+/* Queue a prepared HID report in the USB IN transfer buffer. */
 static bool usb_mouse_send(const uint8_t *data, uint8_t length)
 {
     if(length > sizeof(m_tx.buffer)) //might only be possible due to programming error. consider changing
@@ -1205,7 +1191,7 @@ static bool usb_mouse_send(const uint8_t *data, uint8_t length)
 }
 
 /* Build and queue a HID report from the USB SOF path. */
-bool usb_mouse_send_report(
+static bool usb_mouse_send_report(
     uint8_t buttons,
     int16_t x,
     int16_t y,
@@ -1223,7 +1209,6 @@ bool usb_mouse_send_report(
         .wheel = wheel
     };
 
-    //NRF_LOG_INFO("HID report size = %d", sizeof(report));
         
     //store new report to global usbd buffer
     bool accepted =  usb_mouse_send(

@@ -1,13 +1,8 @@
 #ifndef ESB_MOUSE_H
 #define ESB_MOUSE_H
 
-#include <stdint.h>
 #include <stdbool.h>
-
-
-/**
-* initialize esb to receive packets from wireless mouse
-*/
+#include <stdint.h>
 
 
 typedef struct
@@ -18,16 +13,15 @@ typedef struct
 } mouse_input_report_t;
 
 
-
-
+/* Initialize ESB as the wireless-mouse PRX. */
 void esb_mouse_init(void);
 
-
+/* Snapshot and commit pending receiver-side mouse input. */
 bool esb_mouse_rx_peek(mouse_input_report_t *report);
 void esb_mouse_rx_commit(const mouse_input_report_t *report);
 
-bool esb_mouse_queue_prefix_ack(uint8_t prefix);
-
+/* Read and clear a pending button-triggered remote-wakeup request. */
 bool esb_mouse_remote_wakeup_take(void);
 
-#endif 
+
+#endif
