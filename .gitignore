@@ -5,8 +5,9 @@ pca10056/
 pca10056e/
 pca10100e/
 
-# IAR workspace
+# IAR workspaces
 esb_ptx.eww
+usbd.eww
 
 # Generated firmware output
 hex/
@@ -35,3 +36,11 @@ Release/
 # Windows files
 Thumbs.db
 Desktop.ini
+
+# Unused toolchain projects inside the modified PRX board folder
+pca10056 - modified/blank/arm5_no_packs/
+pca10056 - modified/blank/armgcc/
+pca10056 - modified/blank/iar/
+
+# PRX Segger build output
+pca10056 - modified/blank/ses/Output/
