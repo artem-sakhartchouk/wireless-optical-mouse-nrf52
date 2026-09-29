@@ -2,7 +2,6 @@
 #define PMW3389_H
 
 #include <stdint.h>
-#include <stdbool.h>
 
 
 typedef struct
@@ -13,8 +12,6 @@ typedef struct
 } pmw3389_motion_t;
 
 
-
-
 typedef enum
 {
     PMW3389_OK = 0,
@@ -23,7 +20,7 @@ typedef enum
     PMW3389_INVALID_ID,
     PMW3389_ERROR_SROM,
     PMW3389_INVALID_PARAMETER
-}pmw3389_status_t;
+} pmw3389_status_t;
 
 
 typedef struct
@@ -35,16 +32,15 @@ typedef struct
 } pmw3389_info_t;
 
 
-
-pmw3389_status_t pmw3389_read_info(pmw3389_info_t *info);
-
-
 pmw3389_status_t pmw3389_init(void);
 
-bool pmw3389_is_present(void);
+pmw3389_status_t pmw3389_read_info(
+    pmw3389_info_t *info
+);
 
-bool pmw3389_read_motion(pmw3389_motion_t *motion);
+pmw3389_status_t pmw3389_read_motion_burst(
+    pmw3389_motion_t *motion
+);
 
-pmw3389_status_t pmw3389_read_motion_burst(pmw3389_motion_t *motion);
 
 #endif

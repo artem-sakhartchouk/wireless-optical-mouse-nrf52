@@ -1,28 +1,27 @@
 #include "mouse_motion.h"
-#include "limits.h"
 
-#include "stddef.h"
-
-
-
-/* globals for accumulating 16-bit signed motion deltas to prevent overflow */
-static int32_t m_pending_x;
-static int32_t m_pending_y;
+#include <limits.h>
+#include <stddef.h>
 
 
+/* Pending signed motion accumulated between successful reports. */
+static int32_t m_pending_x = 0;
+static int32_t m_pending_y = 0;
 
-/* add current sensor delta readings to the running total */ 
+
+/* Add the latest sensor deltas to the pending motion total. */
 void mouse_motion_accumulate(int16_t dx, int16_t dy)
 {
     m_pending_x += dx;
     m_pending_y += dy;
-
 }
 
 
-/* limits maximum transmitted motion deltas to 8 bit values for original setup */
-
-static int16_t clamp_axis_to_report(int32_t value)
+/*
+ * Clamp an accumulated axis value to the range representable
+ * by one 16-bit motion report.
+ */
+static int16_t clamp_to_int16(int32_t value)
 {
     if (value > INT16_MAX)
     {
@@ -38,29 +37,31 @@ static int16_t clamp_axis_to_report(int32_t value)
 }
 
 
-
-/* extract motion deltas clamped to int8_t from accumulators,
- * make sure youre not sending zero deltas. 
+/*
+ * Snapshot the currently pending motion without consuming it.
+ *
+ * Each axis is limited to the range representable by one report.
+ * Any remaining motion stays pending for a later report.
  */
 bool mouse_motion_peek_report(mouse_motion_t *report)
 {
-    if(report == NULL)
+    if (report == NULL)
     {
-        return  false;
+        return false;
     }
 
-    report->x = clamp_axis_to_report(m_pending_x);
-    report->y = clamp_axis_to_report(m_pending_y);
-
+    report->x = clamp_to_int16(m_pending_x);
+    report->y = clamp_to_int16(m_pending_y);
 
     return (m_pending_x != 0) || (m_pending_y != 0);
-
-   
 }
 
 
-/* only remove extracted int8_t deltas from total if radio sends report */
-
+/*
+ * Remove the motion contained in a successfully delivered report.
+ *
+ * Motion accumulated after the snapshot remains pending.
+ */
 void mouse_motion_commit_report(const mouse_motion_t *report)
 {
     if (report == NULL)
@@ -71,4 +72,3 @@ void mouse_motion_commit_report(const mouse_motion_t *report)
     m_pending_x -= (int32_t)report->x;
     m_pending_y -= (int32_t)report->y;
 }
-
