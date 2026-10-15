@@ -1,4 +1,5 @@
 #include "esb_mouse.h"
+#include "status_leds.h"
 
 #include <stdint.h>
 #include <limits.h>
@@ -26,6 +27,11 @@ typedef struct __attribute__((packed))
     int16_t y;
 } mouse_packet_t;
 
+typedef struct __attribute__((packed))
+{
+    //esb cpi setting struct
+}; 
+
 _Static_assert(sizeof(mouse_packet_t) == 6,
                "Unexpected ESB mouse packet size");
 
@@ -36,6 +42,7 @@ static void nrf_esb_event_handler(nrf_esb_evt_t const *p_event)
     {
         case NRF_ESB_EVENT_TX_SUCCESS:
             NRF_LOG_DEBUG("TX SUCCESS");
+            led_on(LED_BLUE);
             break;
 
         case NRF_ESB_EVENT_TX_FAILED:
@@ -216,4 +223,20 @@ bool esb_mouse_remote_wakeup_take(void)
     CRITICAL_REGION_EXIT();
 
     return pending;
+}
+
+
+
+ret_code_t esb_queue_test_ack(void)
+{
+    nrf_esb_payload_t payload = {0};
+
+    payload.pipe = 0;
+    payload.length = 2;
+    payload.noack = false;
+
+    payload.data[0] = 0xA5;
+    payload.data[1] = 0x5A;
+
+    return nrf_esb_write_payload(&payload);
 }

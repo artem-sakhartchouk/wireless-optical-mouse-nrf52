@@ -26,5 +26,6 @@ bool esb_mouse_tx_busy(void);
 
 esb_mouse_tx_result_t esb_mouse_tx_result_take(void);
 
+bool esb_test_ack_take(void);
 
 #endif

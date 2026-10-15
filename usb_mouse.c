@@ -9,6 +9,18 @@
 #include "esb_mouse.h"
 
 
+
+static void usbd_setup_SetReport(
+    nrf_drv_usbd_setup_t const * const p_setup);
+
+
+#define CONFIG_REPORT_SIZE 5
+
+static uint8_t m_config_report_buffer[CONFIG_REPORT_SIZE];
+static bool m_config_report_pending = false;
+
+
+
 static void usb_tx_reset_state(void);
 
 
@@ -82,13 +94,13 @@ static const uint8_t device_descriptor[] =
 #define DEVICE_SELF_POWERED 0
 #define REMOTE_WU           1
 
-#define USBD_CONFIG_DESCRIPTOR_FULL_SIZE   (9 + (9 + 9 + 7))
+#define USBD_CONFIG_DESCRIPTOR_FULL_SIZE   (9 + (9 + 9 + 7)+ (9+9))
 
 #define USBD_CONFIG_DESCRIPTOR  \
     0x09,         /* bLength | length of descriptor                                             */\
     0x02,         /* bDescriptorType | descriptor type (CONFIGURATION)                          */\
     USBD_CONFIG_DESCRIPTOR_FULL_SIZE, 0x00,    /* wTotalLength | total length of descriptor(s)  */\
-    0x01,         /* bNumInterfaces                                                             */\
+    0x02,         /* bNumInterfaces                                                             */\
     0x01,         /* bConfigurationValue                                                        */\
     0x00,         /* index of string Configuration | configuration string index (not supported) */\
     0x80| (((DEVICE_SELF_POWERED) ? 1U:0U)<<6) | (((REMOTE_WU) ? 1U:0U)<<5), /* bmAttributes    */\
@@ -111,6 +123,36 @@ static const uint8_t device_descriptor[] =
     0x02,         /* bInterfaceProtocol | interface protocol (1..defined by USB spec: mouse)          */\
     0x00          /* interface string index (not supported)                                           */
 
+
+
+#define USBD_INTERFACE1_DESCRIPTOR \
+    0x09, /* bLength */ \
+    0x04, /* bDescriptorType: Interface */ \
+    0x01, /* bInterfaceNumber: 1 */ \
+    0x00, /* bAlternateSetting: 0 */ \
+    0x00, /* bNumEndpoints: 0 */ \
+    0x03, /* bInterfaceClass: HID */ \
+    0x00, /* bInterfaceSubClass: None */ \
+    0x00, /* bInterfaceProtocol: None */ \
+    0x00  /* iInterface: None */
+
+
+
+#define USBD_CONFIG_REPORT_DESCRIPTOR \
+    0x06, 0x00, 0xFF, /* Usage Page (Vendor Defined 0xFF00) */ \
+    0x09, 0x01,       /* Usage (1) */ \
+    0xA1, 0x01,       /* Collection (Application) */ \
+    0x85, 0x01,       /* Report ID (1) */ \
+    0x09, 0x02,       /* Usage (2) */ \
+    0x15, 0x00,       /* Logical Minimum (0) */ \
+    0x26, 0xFF, 0x00, /* Logical Maximum (255) */ \
+    0x75, 0x08,       /* Report Size (8 bits) */ \
+    0x95, 0x04,       /* Report Count (4) */ \
+    0xB1, 0x02,       /* Feature (Data, Variable, Absolute) */ \
+    0xC0              /* End Collection */
+
+#define USBD_CONFIG_REPORT_DESCRIPTOR_SIZE  \
+    23
 
 
 
@@ -249,6 +291,16 @@ static const uint8_t product_string_descriptor[] =
 
 
 
+#define USBD_HID1_DESCRIPTOR \
+    0x09,       /* bLength */ \
+    0x21,       /* HID descriptor type */ \
+    0x11, 0x01, /* HID version 1.11 */ \
+    0x00,       /* Country code */ \
+    0x01,       /* Number of subordinate descriptors */ \
+    0x22,       /* Report descriptor type */ \
+    (uint8_t)(USBD_CONFIG_REPORT_DESCRIPTOR_SIZE), \
+    (uint8_t)(USBD_CONFIG_REPORT_DESCRIPTOR_SIZE >> 8)
+
 
 /******************************************************************************
  * USB Report Descriptor
@@ -298,12 +350,30 @@ static const uint8_t hid_report_descriptor[] =
     USBD_MOUSE_REPORT_DESCRIPTOR
 }; 
 
+static const uint8_t config_report_descriptor[] =
+{
+    USBD_CONFIG_REPORT_DESCRIPTOR
+};
+
+
+_Static_assert(
+    sizeof(config_report_descriptor) == USBD_CONFIG_REPORT_DESCRIPTOR_SIZE,
+    "Configuration HID report descriptor size mismatch"
+);
+
 static const uint8_t configuration_descriptor[] =
 {
     USBD_CONFIG_DESCRIPTOR,
+
+    // Interface 0: Mouse
     USBD_INTERFACE0_DESCRIPTOR,
     USBD_HID0_DESCRIPTOR,
-    USBD_ENDPOINT1_DESCRIPTOR
+    USBD_ENDPOINT1_DESCRIPTOR,
+
+    // Interface 1: Configuration
+    USBD_INTERFACE1_DESCRIPTOR,
+    USBD_HID1_DESCRIPTOR
+
 };
 
 /******************************************************************************
@@ -362,6 +432,15 @@ static const uint8_t * const endpoint_descriptor =
         HID_DESCRIPTOR_SIZE];
 
 
+static const uint8_t * const hid1_descriptor =
+    &configuration_descriptor[
+        9 +
+        INTERFACE_DESCRIPTOR_SIZE +
+        HID_DESCRIPTOR_SIZE +
+        ENDPOINT_DESCRIPTOR_SIZE +
+        INTERFACE_DESCRIPTOR_SIZE
+    ];
+
 
 /******************************************************************************
  * USB Module State
@@ -383,27 +462,29 @@ static bool m_current_report_valid = false; //
  * USB Helper Functions
  ******************************************************************************/
 
+
+
 static ret_code_t ep_configuration(uint8_t index)
 {
-    if ( index == 1 )
+    if (index == 1)
     {
         nrf_drv_usbd_ep_dtoggle_clear(NRF_DRV_USBD_EPIN1);
         nrf_drv_usbd_ep_stall_clear(NRF_DRV_USBD_EPIN1);
         nrf_drv_usbd_ep_enable(NRF_DRV_USBD_EPIN1);
+
         m_usbd_configured = true;
         led_on(LED_GREEN);
-        nrf_drv_usbd_setup_clear();
     }
-    else if ( index == 0 )
+    else if (index == 0)
     {
         nrf_drv_usbd_ep_disable(NRF_DRV_USBD_EPIN1);
         m_usbd_configured = false;
-        nrf_drv_usbd_setup_clear();
     }
     else
     {
         return NRF_ERROR_INVALID_PARAM;
     }
+
     return NRF_SUCCESS;
 }
 
@@ -661,34 +742,55 @@ static void usbd_setup_GetDescriptor(nrf_drv_usbd_setup_t const * const p_setup)
             }
         }
         break;
-    case 0x21: // HID
-        if ((p_setup->bmRequestType) == 0x81)
+
+    
+case 0x21: // HID descriptor
+    if (p_setup->bmRequestType == 0x81 &&
+        (p_setup->wValue & 0xFF) == 0)
+    {
+        switch (p_setup->wIndex)
         {
-            // Which interface
-            if (((p_setup->wValue) & 0xFF) == 0)
-            {
-                respond_setup_data(
-                    p_setup,
-                    hid_descriptor,
-                    HID_DESCRIPTOR_SIZE);
-                return;
-            }
+        case 0: // Mouse interface
+            respond_setup_data(
+                p_setup,
+                hid_descriptor,
+                HID_DESCRIPTOR_SIZE);
+            return;
+
+        case 1: // Configuration interface
+            respond_setup_data(
+                p_setup,
+                hid1_descriptor,
+                HID_DESCRIPTOR_SIZE);
+            return;
         }
-        break;
-    case 0x22: // HID report
-        if ((p_setup->bmRequestType) == 0x81)
+    }
+    break;
+
+        
+case 0x22: // HID Report Descriptor
+    if (p_setup->bmRequestType == 0x81 &&
+        (p_setup->wValue & 0xFF) == 0)
+    {
+        switch (p_setup->wIndex)
         {
-            // Which interface?
-            if (((p_setup->wValue) & 0xFF) == 0)
-            {
-                respond_setup_data(
-                    p_setup,
-                    hid_report_descriptor,
-                    sizeof(hid_report_descriptor));
-                return;
-            }
+        case 0: // Mouse interface
+            respond_setup_data(
+                p_setup,
+                hid_report_descriptor,
+                sizeof(hid_report_descriptor));
+            return;
+
+        case 1: // Configuration interface
+            respond_setup_data(
+                p_setup,
+                config_report_descriptor,
+                sizeof(config_report_descriptor));
+            return;
         }
-        break;
+    }
+    break;
+
     default:
         break; // Not supported - go to stall
     }
@@ -757,6 +859,16 @@ static void usbd_setup_SetIdle(nrf_drv_usbd_setup_t const * const p_setup)
 
 static void usbd_setup_SetInterface(nrf_drv_usbd_setup_t const * const p_setup)
 {
+
+    if(p_setup->bmRequestType == 0x01 &&
+       p_setup->wLength == 0 &&
+       p_setup->wValue == 0 &&
+       (p_setup->wIndex == 0 || p_setup->wIndex == 1))
+    {
+        nrf_drv_usbd_setup_clear();
+        return;     
+    }
+
     //no alternate setting is supported - STALL always
     NRF_LOG_ERROR("No alternate interfaces supported.");
     nrf_drv_usbd_setup_stall();
@@ -937,6 +1049,23 @@ static void usb_on_sof(void)
 }
 
 
+static bool m_config_led_on = false;
+
+static void config_command_received(void)
+{
+    m_config_led_on = !m_config_led_on;
+
+    if (m_config_led_on)
+    {
+        led_on(LED_YELLOW);
+    }
+    else
+    {
+        led_off(LED_YELLOW);
+    }
+}
+
+
  //usbd event handler
 static void usbd_event_handler(nrf_drv_usbd_evt_t const * const p_event)
 {
@@ -967,6 +1096,8 @@ static void usbd_event_handler(nrf_drv_usbd_evt_t const * const p_event)
     case NRF_DRV_USBD_EVT_RESET:
         {
 
+
+            m_config_report_pending = false;
 
             usb_tx_reset_state();
 
@@ -1048,6 +1179,62 @@ static void usbd_event_handler(nrf_drv_usbd_evt_t const * const p_event)
                 nrf_drv_usbd_setup_stall();
             }
         }
+        else if (NRF_DRV_USBD_EPOUT0 == p_event->data.eptransfer.ep)
+        {
+            if (m_config_report_pending)
+            {
+                m_config_report_pending = false;
+
+                if (p_event->data.eptransfer.status == NRF_USBD_EP_OK)
+                {
+
+                    size_t received = nrf_drv_usbd_epout_size_get(
+                        NRF_DRV_USBD_EPOUT0);
+
+
+                    // Validate Report ID, command, and CPI value.
+                    if (received == CONFIG_REPORT_SIZE && 
+                        m_config_report_buffer[0] == 0x01 &&
+                        m_config_report_buffer[1] == 0x01 &&
+                        m_config_report_buffer[4] == 0x00)
+                    {
+
+                        uint16_t cpi = 
+                            (uint16_t)m_config_report_buffer[2] |
+                            ((uint16_t)m_config_report_buffer[3]<<8);
+
+
+                        bool cpi_valid = (cpi == 400 || cpi == 800 ||
+                                          cpi == 1600 || cpi == 3200);
+
+                        if(cpi_valid)
+                        {
+                            ret_code_t ret = esb_queue_test_ack();
+
+                            if(ret == NRF_SUCCESS)
+                            {
+                                config_command_received();
+                                nrf_drv_usbd_setup_clear(); 
+                            }
+                        }
+                        else
+                        {
+                             nrf_drv_usbd_setup_stall();
+                        }
+                    
+                    }
+                    else
+                    {
+                        nrf_drv_usbd_setup_stall();
+                    }
+
+                }
+                else if (p_event->data.eptransfer.status != NRF_USBD_EP_ABORTED)
+                {
+                    nrf_drv_usbd_setup_stall();
+                }
+            }
+        }
 
         break;
     case NRF_DRV_USBD_EVT_SETUP:
@@ -1074,9 +1261,23 @@ static void usbd_event_handler(nrf_drv_usbd_evt_t const * const p_event)
             case 0x08: // GetConfig
                 usbd_setup_GetConfig(&setup);
                 break;
-            case 0x09: // SetConfig
-                usbd_setup_SetConfig(&setup);
+
+            case 0x09:
+                if (setup.bmRequestType == 0x00)
+                {
+                    usbd_setup_SetConfig(&setup);
+                }
+                else if (setup.bmRequestType == 0x21)
+                {
+                    usbd_setup_SetReport(&setup);
+    
+                }
+                else 
+                {
+                    nrf_drv_usbd_setup_stall();
+                }
                 break;
+
             //HID class
             case 0x0A: // SetIdle
                 usbd_setup_SetIdle(&setup);
@@ -1106,6 +1307,42 @@ static void usbd_event_handler(nrf_drv_usbd_evt_t const * const p_event)
     default:
         break;
     }
+}
+
+
+
+static void usbd_setup_SetReport(
+    nrf_drv_usbd_setup_t const * const p_setup)
+{
+    if (p_setup->bmRequestType != 0x21 ||
+        p_setup->wIndex != 1 ||
+        p_setup->wValue != 0x0301 ||
+        p_setup->wLength != CONFIG_REPORT_SIZE)
+    {
+        nrf_drv_usbd_setup_stall();
+        return;
+    }
+
+    nrf_drv_usbd_transfer_t transfer =
+    {
+        .p_data = {.rx = m_config_report_buffer},
+        .size = sizeof(m_config_report_buffer)
+    };
+
+    m_config_report_pending = true;
+
+    ret_code_t err = nrf_drv_usbd_ep_transfer(
+        NRF_DRV_USBD_EPOUT0,
+        &transfer);
+
+    if (err != NRF_SUCCESS)
+    {
+        m_config_report_pending = false;
+        nrf_drv_usbd_setup_stall();
+        return;
+    }
+
+    nrf_drv_usbd_setup_data_clear();
 }
 
 

@@ -175,19 +175,6 @@ void led_off(led_t led)
 
 }
 
-/*
-void led_toggle(led_t led)
-{
-    if(led >= LED_COUNT)
-    {
-        return;
-    }
-
-    nrf_gpio_pin_toggle(m_led_pins[led]);
-
-}
-*/
-
 
 
 //configures the led mode, used by usb and esb

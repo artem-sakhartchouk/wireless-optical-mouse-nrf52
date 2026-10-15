@@ -30,6 +30,9 @@
 #include "mouse_motion.h"
 
 
+
+
+
 /* Button bit positions aligned with the USB HID button field. */
 #define MOUSE_BUTTON_LEFT   (1u << 0)
 #define MOUSE_BUTTON_RIGHT  (1u << 1)
@@ -226,12 +229,10 @@ int main(void)
         );
     }
 
+    bsp_board_led_off(0);
 
     while (true)
     {
-        static uint32_t idle_divider = 0;
-        static uint32_t active_divider = 0;
-
 
         /*
          * Process the previous ESB transaction result.

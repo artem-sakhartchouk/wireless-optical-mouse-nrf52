@@ -7,10 +7,17 @@
 #include "nrf_esb.h"
 #include "nrf_error.h"
 #include "nrf_log.h"
+#include "bsp.h"
 
 #include "app_util_platform.h"
 
 #include "mouse_motion.h"
+
+
+static volatile bool m_test_ack_received = false;
+
+/* diagnostic variable to test ack processing */
+static volatile uint32_t m_tx_success_count = 0;
 
 
 /* Wireless mouse application payload. */
@@ -72,6 +79,28 @@ void nrf_esb_event_handler(nrf_esb_evt_t const *p_event)
             break;
         }
 
+        
+        case NRF_ESB_EVENT_RX_RECEIVED:
+        {
+            nrf_esb_payload_t rx_payload;
+
+            while (nrf_esb_read_rx_payload(&rx_payload) == NRF_SUCCESS)
+            {
+                if (rx_payload.length == 2 &&
+                    rx_payload.pipe == 0 &&
+                    rx_payload.data[0] == 0xA5 &&
+                    rx_payload.data[1] == 0x5A)
+                {
+                    m_test_ack_received = true;
+                    bsp_board_led_on(0);
+
+                }
+            }
+
+            break;
+        }
+
+            
         default:
         {
             break;
@@ -102,11 +131,9 @@ uint32_t esb_mouse_tx_init(void)
     };
 
 
-    nrf_esb_config_t nrf_esb_config =
-        NRF_ESB_DEFAULT_CONFIG;
+    nrf_esb_config_t nrf_esb_config = NRF_ESB_DEFAULT_CONFIG;
 
-    nrf_esb_config.protocol =
-        NRF_ESB_PROTOCOL_ESB_DPL;
+    nrf_esb_config.protocol = NRF_ESB_PROTOCOL_ESB_DPL;
 
     nrf_esb_config.retransmit_delay =
         250;
@@ -257,4 +284,19 @@ esb_mouse_tx_result_t esb_mouse_tx_result_take(void)
 
 
     return result;
+}
+
+bool esb_test_ack_take(void)
+{
+    bool received;
+
+    CRITICAL_REGION_ENTER();
+
+    received = m_test_ack_received;
+    m_test_ack_received = false;
+
+    CRITICAL_REGION_EXIT();
+
+    return received;
+
 }

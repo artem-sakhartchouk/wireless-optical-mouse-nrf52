@@ -3,7 +3,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
-
+#include "sdk_errors.h"
 
 typedef struct
 {
@@ -23,5 +23,6 @@ void esb_mouse_rx_commit(const mouse_input_report_t *report);
 /* Read and clear a pending button-triggered remote-wakeup request. */
 bool esb_mouse_remote_wakeup_take(void);
 
+ret_code_t esb_queue_test_ack(void);
 
 #endif
